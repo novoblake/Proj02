@@ -1,21 +1,35 @@
 import torch
 
 
-EIGEN_CROP = {"nyu": (45, 471, 41, 601)}  # top, bottom, left, right for 480x640
-
-
 def eigen_crop(shape, dataset="nyu"):
+    top, bottom, left, right = 45, 471, 41, 601
     _, _, h, w = shape
-    top, bottom, left, right = EIGEN_CROP[dataset]
-    top = int(top / 480 * h)
-    bottom = int(bottom / 480 * h)
-    left = int(left / 640 * w)
-    right = int(right / 640 * w)
+    return (
+        slice(int(top / 480 * h), int(bottom / 480 * h)),
+        slice(int(left / 640 * w), int(right / 640 * w)),
+    )
+
+
+def garg_crop(shape, dataset="kitti"):
+    _, _, h, w = shape
+    top = int(0.40810811 * h)
+    bottom = int(0.99135135 * h)
+    left = int(0.03594771 * w)
+    right = int(0.96405229 * w)
     return (slice(top, bottom), slice(left, right))
 
 
+CROPS = {"nyu": eigen_crop, "kitti": garg_crop}
+
+
 def compute_depth_metrics(pred, target, dataset="nyu", min_depth=1e-3, max_depth=10.0):
-    crop = eigen_crop(pred.shape, dataset)
+    if pred.shape[-2:] != target.shape[-2:]:
+        import torch.nn.functional as F
+
+        pred = F.interpolate(
+            pred, size=target.shape[-2:], mode="bilinear", align_corners=False
+        )
+    crop = CROPS[dataset](pred.shape, dataset)
     p = pred[:, :, crop[0], crop[1]]
     t = target[:, :, crop[0], crop[1]]
     mask = (t > min_depth) & (t < max_depth)

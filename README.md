@@ -59,22 +59,70 @@ Each connection can be ablated independently via flags in `benchmark.py` /
 Loss = SILog + multi-scale gradient matching + edge-aware smoothness
 (+ optional scale-shift-invariant term for cross-dataset training).
 
+Data layout: `data_root/images/*.{png,jpg}` and `data_root/depth/*.png` with
+matching file names. Depth PNGs are divided by `--depth-scale`
+(256 when depths are stored as meters x 256, 1000 for millimeter 16-bit
+exports, 1 for float files).
+
+### NYUv2
+
 ```bash
 python train.py --data-root data/nyu --val-root data/nyu_val \
     --dataset nyu --epochs 25 --batch-size 16 --out-dir runs/nyu
-python train.py --data-root data/kitti --dataset kitti --max-depth 80 \
-    --depth-scale 256 --epochs 40 --out-dir runs/kitti
 ```
 
-Data layout: `data_root/images/*.{png,jpg}` and `data_root/depth/*.png` with
-matching file names. Depth PNGs divided by `--depth-scale`
-(256 for 8-bit exports, 1000 for KITTI-style 16-bit, set 1 for float files).
+### KITTI (exact commands)
+
+1. Download the KITTI depth-prediction data
+   ([kitti_depth](https://www.cvlibs.net/datasets/kitti/eval_depth.php?benchmark=depth_prediction)
+   — "Depth Prediction annotated RGB-D ground truth", i.e. the Ma & Karaman
+   converted annotated depth maps). Unzip so you have
+   `<kitti_root>/train/<date>/<drive>/image_02/data/*.png` and
+   `<kitti_root>/train/<date>/<drive>/proj_depth/groundtruth/image_02/data/*.png`
+   (same for `val/`). GT depth PNGs there store depth_meters x 256.
+
+2. Convert to the repo's paired layout (verified on synthetic KITTI trees):
+
+```bash
+tools/make_kitti_pairs.py --kitti-root /path/to/kitti_root --out data/kitti
+```
+
+3. Train (352x1216, 16-bit GT/256, max depth 80 m):
+
+```bash
+python train.py --data-root data/kitti --val-root data/kitti \
+    --dataset kitti --size 352 1216 --batch-size 16 --epochs 40 \
+    --lr 4e-4 --depth-scale 256 --max-depth 80 \
+    --out-dir runs/kitti
+```
+
+Notes: the default val split = last 0.5% of `--data-root`; pass
+`--val-root data/kitti_val` if you converted a separate val split. On small
+GPUs drop `--batch-size` to 4-8. If your GT was exported differently, match
+`--depth-scale` to the export (pixel_value / depth_scale = meters).
+
+4. Evaluate on val with the standard understated KITTI protocol (Garg crop,
+   depths in (0, 80) m):
+
+```bash
+python eval.py --checkpoint runs/kitti/best.pth --data-root data/kitti \
+    --dataset kitti --size 352 1216 --depth-scale 256 --max-depth 80
+```
+
+5. If you want a single number for the paper/table, same eval again, logged:
+
+```bash
+python eval.py --checkpoint runs/kitti/best.pth --data-root data/kitti \
+    --dataset kitti --size 352 1216 --depth-scale 256 --max-depth 80 \
+    --save-vis runs/kitti/vis
+```
 
 ## Evaluation (standard protocols)
 
 `eval.py` computes AbsRel, SqRel, RMSE, RMSElog, log10 and δ1/δ2/δ3 with the
-**Eigen crop** for NYUv2 and the garg crop convention via `--dataset kitti`,
-plus optional median-scale alignment for relative-depth checkpoints.
+**Eigen crop** for NYUv2 and the **Garg crop** for KITTI (selected by
+`--dataset` automatically), plus optional median-scale alignment for
+relative-depth checkpoints.
 
 ```bash
 python eval.py --checkpoint runs/nyu/best.pth --data-root data/nyu_val --dataset nyu

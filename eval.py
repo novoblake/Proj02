@@ -58,7 +58,8 @@ def main():
                 d = (d / max(d.max(), 1e-3) * 255).astype(np.uint8)
                 Image.fromarray(d).save(Path(args.save_vis) / f"{idx:03d}_gt.png")
 
-    print(f"{args.dataset.upper()} eval ({n} samples) | crop=eigen{' + median-align' if args.median_align else ''}")
+    crop_name = "garg" if args.dataset == "kitti" else "eigen"
+    print(f"{args.dataset.upper()} eval ({n} samples) | crop={crop_name}{' + median-align' if args.median_align else ''}")
     header = "abs_rel  sq_rel   rmse    rmse_log log10   d1      d2      d3"
     print(header)
     if agg:
