@@ -17,5 +17,7 @@ jobs:
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
       - run: pytest tests/ -q
+      - name: smoke test (structure + synthetic idea check)
+        run: python smoke_test.py
       - name: smoke benchmark
         run: python benchmark.py --size 256 256

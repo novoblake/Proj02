@@ -54,6 +54,24 @@ Each connection can be ablated independently via flags in `benchmark.py` /
 `train.py` (`--disable-gated-skips`, `--disable-recurrence`,
 `--disable-detail-head`), giving a clean 3-way ablation study.
 
+## Quick start: verify the setup (smoke test)
+
+Before any real training, run the pre-flight smoke test on your local PC:
+
+```bash
+pip install -r requirements.txt
+python smoke_test.py            # ~1 min: structure checks + synthetic idea check
+python smoke_test.py --structure   # structure only (~5 s)
+python smoke_test.py --full     # ~5 min: longer 4-config comparison
+```
+
+It verifies: all model variants build and backprop (both encoders, uncertainty
+head, plug-in gate), the full metric suite (eigen/garg crops, AUSE), and then
+trains on a synthetic depth field with coarse + fine multi-scale structure and
+compares the full model against its ablations. On this task the gated-skip
+full model beats standard-skip fusion by ~33% val RMSE — an early, controlled
+sign the decoder-connection idea holds before spending GPU days on real data.
+
 ## Training
 
 Loss = SILog + multi-scale gradient matching + edge-aware smoothness
