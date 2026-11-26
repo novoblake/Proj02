@@ -61,3 +61,36 @@ def median_scale_align(pred, target, min_depth=1e-3, max_depth=10.0):
         return pred
     s = torch.median(target[mask]) / torch.median(pred[mask])
     return pred * s
+
+
+def sparsification_ause(pred, target, uncertainty, min_depth=1e-3, max_depth=10.0, steps=20):
+    """Area Under the Sparsification Error curve. 0 is a perfectly
+    calibrated uncertainty map; it compares the error-vs-retention curve
+    when ranking pixels by predicted uncertainty against the oracle
+    ranking by true error."""
+    import torch.nn.functional as F
+
+    if pred.shape[-2:] != target.shape[-2:]:
+        pred = F.interpolate(
+            pred, size=target.shape[-2:], mode="bilinear", align_corners=False
+        )
+        uncertainty = F.interpolate(
+            uncertainty, size=target.shape[-2:], mode="bilinear", align_corners=False
+        )
+    mask = (target > min_depth) & (target < max_depth)
+    if mask.sum() < 100:
+        return float("nan")
+    err = (pred - target).abs()[mask].flatten()
+    unc = uncertainty[mask].flatten()
+    n = err.numel()
+    order_unc = err[unc.argsort()]
+    order_oracle = err[err.argsort()]
+    keepers = torch.linspace(1.0, 0.05, steps)
+    sparse = [order_unc[: max(int(k * n), 1)].mean().item() for k in keepers]
+    oracle = [order_oracle[: max(int(k * n), 1)].mean().item() for k in keepers]
+    import numpy as np
+
+    x = keepers.numpy()[::-1]
+    return float(np.trapezoid(
+        (np.asarray(sparse) - np.asarray(oracle))[::-1], x
+    ))

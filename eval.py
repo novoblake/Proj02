@@ -8,7 +8,7 @@ from PIL import Image
 
 from litedepth.model import build_model
 from litedepth.datasets import ImageDepthDataset
-from litedepth.metrics import compute_depth_metrics, median_scale_align
+from litedepth.metrics import compute_depth_metrics, median_scale_align, sparsification_ause
 
 
 def main():
@@ -39,14 +39,23 @@ def main():
     if args.save_vis:
         Path(args.save_vis).mkdir(parents=True, exist_ok=True)
 
+    use_unc = bool(ckpt.get("cfg", {}).get("uncertainty", False))
     agg, n = {}, 0
     with torch.no_grad():
         for idx, (img, dep) in enumerate(loader):
             img, dep = img.to(device), dep.to(device)
-            pred = model(img) * args.max_depth
+            if use_unc:
+                pred, logvar = model(img, return_uncertainty=True)
+                pred = pred * args.max_depth
+            else:
+                pred = model(img) * args.max_depth
             if args.median_align:
                 pred = median_scale_align(pred, dep, max_depth=args.max_depth)
             m = compute_depth_metrics(pred, dep, args.dataset, max_depth=args.max_depth)
+            if use_unc:
+                ause = sparsification_ause(pred, dep, logvar, max_depth=args.max_depth)
+                if ause == ause:
+                    m["ause"] = ause
             for k, v in m.items():
                 agg[k] = agg.get(k, 0.0) + v
             n += 1
@@ -61,13 +70,18 @@ def main():
     crop_name = "garg" if args.dataset == "kitti" else "eigen"
     print(f"{args.dataset.upper()} eval ({n} samples) | crop={crop_name}{' + median-align' if args.median_align else ''}")
     header = "abs_rel  sq_rel   rmse    rmse_log log10   d1      d2      d3"
+    if use_unc:
+        header += "  ause"
     print(header)
     if agg:
-        print(
+        line = (
             f"{agg['abs_rel']/n:.4f}   {agg['sq_rel']/n:.4f}   "
             f"{agg['rmse']/n:.4f}  {agg['rmse_log']/n:.4f}   "
             f"{agg['log10']/n:.4f} {agg['d1']/n:.4f} {agg['d2']/n:.4f} {agg['d3']/n:.4f}"
         )
+        if use_unc and "ause" in agg:
+            line += f" {agg['ause']/n:.4f}"
+        print(line)
 
 
 if __name__ == "__main__":

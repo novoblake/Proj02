@@ -157,6 +157,25 @@ MobileNetV3-small encoder option: 1.70M parameters for even tighter budgets
 (build with `{'encoder': 'mobilenetv3'}` or `--encoder mobilenetv3`, ImageNet
 weights auto-downloaded by torchvision).
 
+## Reproducibility and ablation harness (journal-grade rigor)
+
+- Fixed seeds + deterministic cudnn (`--seed 42`), EMA weights for eval and
+  best-checkpoint selection (`--ema 1`), per-epoch metrics appended to
+  `runs/<dir>/metrics.json`.
+- **Aleatoric uncertainty head**: `--uncertainty` adds a Laplacian NLL head
+  (heteroscedastic confidence) and reports **AUSE (sparsification error)**
+  in train/eval output — a calibration metric journals expect.
+- **Plug-in gate for generality studies**: `litedepth/plugins.py` exports the
+  scale-competition gate for swapping into other encoder-decoder backbones.
+- Multi-seed ablation + Markdown result table:
+
+```bash
+bash experiments/run_ablation.sh data/nyu data/nyu_val runs/ablation
+python experiments/collect_results.py runs/ablation
+```
+
+See `docs/JOURNAL_PLAN.md` for the full venue analysis and experiment matrix.
+
 ## Tests
 
 ```bash

@@ -87,21 +87,24 @@ class DetailGuidanceHead(nn.Module):
     high-resolution stem features, recovering boundaries that coarse
     decoder features lose."""
 
-    def __init__(self, dec_ch, detail_ch, out_ch=16):
+    def __init__(self, dec_ch, detail_ch, out_ch=16, uncertainty=False):
         super().__init__()
         self.up = nn.PixelShuffle(2)
         self.fuse = nn.Sequential(
             ConvBNAct(dec_ch // 4 + detail_ch, out_ch, 3, 1),
             ConvBNAct(out_ch, out_ch, 3, 1, groups=out_ch),
         )
-        self.head = nn.Conv2d(out_ch, 1, 1)
+        self.head = nn.Conv2d(out_ch, 2 if uncertainty else 1, 1)
         self.detail_proj = nn.Conv2d(detail_ch, detail_ch, 1, bias=False)
 
     def forward(self, dec, detail):
         x = self.up(dec)
         d = self.detail_proj(detail)
         x = self.fuse(torch.cat([x, d], dim=1))
-        return torch.sigmoid(self.head(x))
+        out = self.head(x)
+        if out.shape[1] == 2:
+            return torch.sigmoid(out[:, :1]), out[:, 1:]
+        return torch.sigmoid(out)
 
 
 class LiteDepthDecoder(nn.Module):
@@ -114,6 +117,7 @@ class LiteDepthDecoder(nn.Module):
         disable_gated_skips=False,
         disable_recurrence=False,
         disable_detail_head=False,
+        uncertainty=False,
     ):
         super().__init__()
         self.n_levels = len(chs)
@@ -146,10 +150,11 @@ class LiteDepthDecoder(nn.Module):
                 ]
             )
             self.recurrent = 1 if disable_recurrence else recurrent
+        head_kwargs = dict(dec_ch=chs[-1], detail_ch=detail_ch, uncertainty=uncertainty)
         self.head = (
-            DetailGuidanceHead(chs[-1], detail_ch)
+            DetailGuidanceHead(**head_kwargs)
             if not disable_detail_head
-            else SimpleHead(chs[-1], detail_ch)
+            else SimpleHead(**head_kwargs)
         )
 
     def forward(self, feats):
@@ -167,18 +172,26 @@ class LiteDepthDecoder(nn.Module):
             else:
                 x = lvl(up, srcs, size)
         out = self.head(x, feats["detail"])
+        if isinstance(out, tuple):
+            depth, logvar = out
+            depth = F.interpolate(depth, scale_factor=2, mode="bilinear", align_corners=False)
+            logvar = F.interpolate(logvar, scale_factor=2, mode="bilinear", align_corners=False)
+            return depth, logvar
         return F.interpolate(out, scale_factor=2, mode="bilinear", align_corners=False)
 
 
 class SimpleHead(nn.Module):
-    def __init__(self, dec_ch, detail_ch):
+    def __init__(self, dec_ch, detail_ch, uncertainty=False):
         super().__init__()
         self.conv = nn.Sequential(
             ConvBNAct(dec_ch + detail_ch, 32, 3, 1),
-            nn.Conv2d(32, 1, 1),
+            nn.Conv2d(32, 2 if uncertainty else 1, 1),
         )
 
     def forward(self, dec, detail):
         d = F.interpolate(detail, size=dec.shape[-2:], mode="bilinear", align_corners=False)
         x = self.conv(torch.cat([dec, d], dim=1))
-        return torch.sigmoid(F.interpolate(x, scale_factor=2, mode="bilinear", align_corners=False))
+        x = F.interpolate(x, scale_factor=2, mode="bilinear", align_corners=False)
+        if x.shape[1] == 2:
+            return torch.sigmoid(x[:, :1]), x[:, 1:]
+        return torch.sigmoid(x)

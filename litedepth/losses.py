@@ -50,6 +50,13 @@ def gradient_matching(pred, target, valid_mask, weights=(1.0, 0.5)):
     return loss / max(w_total, 1e-6)
 
 
+def laplacian_nll(pred, target, logvar, valid_mask, eps=1e-6):
+    inv_var = torch.exp(-logvar.clamp(min=-7, max=7))
+    err = (pred - target).abs()
+    nll = 0.5 * inv_var * err + 0.5 * logvar
+    return nll[valid_mask].mean()
+
+
 def edge_aware_smoothness(pred, image, eps=1e-6):
     dx_d = torch.abs(pred[..., 1:] - pred[..., :-1]).mean()
     dy_d = torch.abs(pred[..., 1:, :] - pred[..., :-1, :]).mean()
@@ -66,6 +73,7 @@ class DepthLoss(nn.Module):
         smooth_weight=0.05,
         ssi_weight=0.0,
         min_depth=1e-3,
+        unc_weight=0.5,
     ):
         super().__init__()
         self.silog_weight = silog_weight
@@ -73,14 +81,18 @@ class DepthLoss(nn.Module):
         self.smooth_weight = smooth_weight
         self.ssi_weight = ssi_weight
         self.min_depth = min_depth
+        self.unc_weight = unc_weight
 
-    def forward(self, pred, target, image):
+    def forward(self, pred, target, image, logvar=None):
         target = target.clamp(min=self.min_depth, max=10.0)
         valid_mask = target > self.min_depth
         if valid_mask.sum() == 0:
             return pred.sum() * 0.0, {}
         loss = 0.0
         parts = {}
+        if logvar is not None:
+            parts["unc"] = laplacian_nll(pred, target, logvar, valid_mask)
+            loss = loss + self.unc_weight * parts["unc"]
         if self.silog_weight > 0:
             parts["silog"] = silog_loss(pred, target, valid_mask)
             loss = loss + self.silog_weight * parts["silog"]

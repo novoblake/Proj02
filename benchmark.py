@@ -49,6 +49,7 @@ def main():
     ap.add_argument("--disable-gated-skips", action="store_true")
     ap.add_argument("--disable-recurrence", action="store_true")
     ap.add_argument("--disable-detail-head", action="store_true")
+    ap.add_argument("--uncertainty", action="store_true")
     ap.add_argument("--device", default=None)
     ap.add_argument("--checkpoint", default=None)
     ap.add_argument("--benchmark", action="store_true", help="run latency/MACs benchmark")
@@ -62,6 +63,7 @@ def main():
             "disable_gated_skips": args.disable_gated_skips,
             "disable_recurrence": args.disable_recurrence,
             "disable_detail_head": args.disable_detail_head,
+            "uncertainty": args.uncertainty,
         }
     ).to(device).eval()
     if args.checkpoint:

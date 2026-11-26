@@ -25,6 +25,7 @@ class LiteDepthGD(nn.Module):
         disable_gated_skips=False,
         disable_recurrence=False,
         disable_detail_head=False,
+        uncertainty=False,
     ):
         super().__init__()
         enc, chs, detail_ch = build_encoder_any(encoder)
@@ -36,11 +37,19 @@ class LiteDepthGD(nn.Module):
             disable_gated_skips=disable_gated_skips,
             disable_recurrence=disable_recurrence,
             disable_detail_head=disable_detail_head,
+            uncertainty=uncertainty,
         )
 
-    def forward(self, x):
+    def forward(self, x, return_uncertainty=False):
         feats = self.encoder(x)
-        return self.decoder(feats)
+        out = self.decoder(feats)
+        if return_uncertainty:
+            if not isinstance(out, tuple):
+                raise ValueError("model was built without uncertainty=True")
+            return out
+        if isinstance(out, tuple):
+            return out[0]
+        return out
 
 
 def build_model(cfg=None, **kwargs):
@@ -52,4 +61,5 @@ def build_model(cfg=None, **kwargs):
         disable_gated_skips=cfg.get("disable_gated_skips", False),
         disable_recurrence=cfg.get("disable_recurrence", False),
         disable_detail_head=cfg.get("disable_detail_head", False),
+        uncertainty=cfg.get("uncertainty", False),
     )
